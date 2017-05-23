@@ -1,4 +1,4 @@
-# Copyright (C) 2007-2016 Giampaolo Rodola' <g.rodola@gmail.com>.
+# Copyright (C) 2007 Giampaolo Rodola' <g.rodola@gmail.com>.
 # Use of this source code is governed by MIT license that can be
 # found in the LICENSE file.
 
@@ -91,7 +91,7 @@ _write = asyncore.write
 # These errnos indicate that a connection has been abruptly terminated.
 _ERRNOS_DISCONNECTED = set((
     errno.ECONNRESET, errno.ENOTCONN, errno.ESHUTDOWN, errno.ECONNABORTED,
-    errno.EPIPE, errno.EBADF))
+    errno.EPIPE, errno.EBADF, errno.ETIMEDOUT))
 if hasattr(errno, "WSAECONNRESET"):
     _ERRNOS_DISCONNECTED.add(errno.WSAECONNRESET)
 if hasattr(errno, "WSAECONNABORTED"):

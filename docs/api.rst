@@ -454,7 +454,6 @@ Filesystem
 
   .. method:: mkdir(path)
   .. method:: chdir(path)
-  .. method:: listdir(path)
   .. method:: rmdir(path)
   .. method:: remove(path)
   .. method:: rename(src, dst)
@@ -481,6 +480,16 @@ Filesystem
 
     Wrapper around
     `tempfile.mkstemp <http://docs.python.org/library/tempfile.html#tempfile.mkstemp>`_.
+
+  .. method:: listdir(path)
+
+    Wrapper around
+    `os.listdir <http://docs.python.org/library/os.html#os.listdir>`_.
+    It is expected to return a list of unicode strings or a generator yielding
+    unicode strings.
+
+    .. versionchanged:: 1.6.0 can also return a generator.
+
 
 Extended classes
 ================
@@ -511,6 +520,30 @@ Extended handlers
 
     The path of the file containing the private RSA key; can be omittetted if
     certfile already contains the private key (defaults: ``None``).
+
+  .. data:: ssl_protocol
+
+     The desired SSL protocol version to use. This defaults to
+     `SSL.SSLv23_METHOD` which will negotiate the highest protocol that both
+     the server and your installation of OpenSSL support.
+
+  .. data:: ssl_options
+
+     specific OpenSSL options. These default to:
+     `SSL.OP_NO_SSLv2 | SSL.OP_NO_SSLv3 | SSL.OP_NO_COMPRESSION` disabling
+     SSLv2 and SSLv3 versions and SSL compression algorithm which are
+     considered insecure.
+     Can be set to None in order to improve compatibilty with older (insecure)
+     FTP clients.
+
+     .. versionadded:: 1.6.0
+
+  .. data:: ssl_context
+
+      A `SSL.Context <http://pyopenssl.sourceforge.net/pyOpenSSL.html/openssl-context.html>`__
+      instance which was previously configured.
+      If specified :data:`ssl_protocol` and :data:`ssl_options` parameters will
+      be ignored.
 
   .. data:: tls_control_required
 

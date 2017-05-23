@@ -1,22 +1,26 @@
-.. image:: https://img.shields.io/pypi/dm/pyftpdlib.svg
-    :target: https://pypi.python.org/pypi/pyftpdlib/
-    :alt: Download this month
+.. image:: https://img.shields.io/travis/giampaolo/pyftpdlib/master.svg?maxAge=3600&label=Linux%20/%20OSX
+    :target: https://travis-ci.org/giampaolo/pyftpdlib
+    :alt: Linux tests (Travis)
 
-.. image:: https://img.shields.io/pypi/v/pyftpdlib.svg
+.. image:: https://img.shields.io/appveyor/ci/giampaolo/pyftpdlib/master.svg?maxAge=3600&label=Windows
+    :target: https://ci.appveyor.com/project/giampaolo/pyftpdlib
+    :alt: Windows tests (Appveyor)
+
+.. image:: https://coveralls.io/repos/github/giampaolo/pyftpdlib/badge.svg?branch=master
+    :target: https://coveralls.io/github/giampaolo/pyftpdlib?branch=master
+    :alt: Test coverage (coverall.io)
+
+.. image:: https://img.shields.io/pypi/v/pyftpdlib.svg?label=pypi
     :target: https://pypi.python.org/pypi/pyftpdlib/
     :alt: Latest version
+
+.. image:: https://img.shields.io/github/stars/giampaolo/pyftpdlib.svg
+    :target: https://github.com/giampaolo/pyftpdlib/
+    :alt: Github stars
 
 .. image:: https://img.shields.io/pypi/l/pyftpdlib.svg
     :target: https://pypi.python.org/pypi/pyftpdlib/
     :alt: License
-
-.. image:: https://img.shields.io/travis/giampaolo/pyftpdlib/master.svg
-    :target: https://travis-ci.org/giampaolo/pyftpdlib
-    :alt: Travis
-
-.. image:: https://coveralls.io/repos/giampaolo/pyftpdlib/badge.svg?branch=master&service=github
-    :target: https://coveralls.io/github/giampaolo/pyftpdlib?branch=master
-    :alt: Test coverage (coverall.io)
 
 Quick links
 ===========
@@ -181,6 +185,8 @@ software to the
 Timeline
 ========
 
+- 2017-04-06: version `1.5.2 <https://pypi.python.org/packages/source/p/pyftpdlib/pyftpdlib-1.5.2.tar.gz>`__ released.
+- 2016-05-02: version `1.5.1 <https://pypi.python.org/packages/source/p/pyftpdlib/pyftpdlib-1.5.1.tar.gz>`__ released.
 - 2015-12-13: version `1.5.0 <https://pypi.python.org/packages/source/p/pyftpdlib/pyftpdlib-1.5.0.tar.gz>`__ released.
 - 2014-06-03: version `1.4.0 <https://pypi.python.org/packages/source/p/pyftpdlib/pyftpdlib-1.4.0.tar.gz>`__ released.
 - 2014-04-12: version `1.3.1 <https://pypi.python.org/packages/source/p/pyftpdlib/pyftpdlib-1.3.1.tar.gz>`__ released.
@@ -240,21 +246,21 @@ Trademarks
 
 Some famous trademarks which adopted pyftpdlib (`complete list <http://pythonhosted.org/pyftpdlib/adoptions.html>`__).
 
-.. image:: http://pyftpdlib.googlecode.com/svn-history/wiki/images/chrome.jpg
+.. image:: docs/images/chrome.jpg
   :target: http://www.google.com/chrome
-.. image:: http://pyftpdlib.googlecode.com/svn-history/wiki/images/debian.png
+.. image:: docs/images/debian.png
   :target: http://www.debian.org
-.. image:: http://pyftpdlib.googlecode.com/svn-history/wiki/images/fedora.png
+.. image:: docs/images/fedora.png
   :target: http://fedoraproject.org/
-.. image:: http://pyftpdlib.googlecode.com/svn-history/wiki/images/freebsd.gif
+.. image:: docs/images/freebsd.gif
   :target: http://www.freebsd.org
-.. image:: http://pyftpdlib.googlecode.com/svn-history/wiki/images/openerp.jpg
+.. image:: docs/images/openerp.jpg
   :target: http://openerp.com
-.. image:: http://pyftpdlib.googlecode.com/svn-history/wiki/images/bazaar.jpg
+.. image:: docs/images/bazaar.jpg
   :target: http://bazaar-vcs.org
-.. image:: http://pyftpdlib.googlecode.com/svn-history/wiki/images/bitsontherun.png
+.. image:: docs/images/bitsontherun.png
   :target: http://www.bitsontherun.com
-.. image:: http://pyftpdlib.googlecode.com/svn-history/wiki/images/openvms.png
+.. image:: docs/images/openvms.png
   :target: http://www.openvms.org/
-.. image:: http://pyftpdlib.googlecode.com/svn-history/wiki/images/smartfile.jpg
+.. image:: docs/images/smartfile.png
   :target: https://www.smartfile.com/

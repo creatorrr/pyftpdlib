@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright (C) 2007-2016 Giampaolo Rodola' <g.rodola@gmail.com>.
+# Copyright (C) 2007 Giampaolo Rodola' <g.rodola@gmail.com>.
 # Use of this source code is governed by MIT license that can be
 # found in the LICENSE file.
 
@@ -105,6 +105,7 @@ class BaseIOLoopTestCase(object):
         # Simulate an exception when close()ing a socket handler.
         # Exception should be logged and ignored.
         class Handler(AsyncChat):
+
             def close(self):
                 1 / 0
 
@@ -122,6 +123,7 @@ class BaseIOLoopTestCase(object):
         # Simulate an exception when close()ing a socket handler.
         # Exception should be ignored (and not logged).
         class Handler(AsyncChat):
+
             def close(self):
                 raise OSError(errno.EBADF, "")
 

@@ -1,4 +1,4 @@
-# Copyright (C) 2007-2016 Giampaolo Rodola' <g.rodola@gmail.com>.
+# Copyright (C) 2007 Giampaolo Rodola' <g.rodola@gmail.com>.
 # Use of this source code is governed by MIT license that can be
 # found in the LICENSE file.
 
@@ -23,6 +23,7 @@ from .servers import FTPServer
 
 class CustomizedOptionFormatter(optparse.IndentedHelpFormatter):
     """Formats options shown in help in a prettier way."""
+
     def format_option(self, option):
         result = []
         opts = self.option_strings[option]
@@ -54,15 +55,15 @@ def main():
     parser.add_option('-r', '--range', default=None, metavar="FROM-TO",
                       help="the range of TCP ports to use for passive "
                            "connections (e.g. -r 8000-9000)")
+    parser.add_option('-D', '--debug', action='store_true',
+                      help="enable DEBUG logging evel")
     parser.add_option('-v', '--version', action='store_true',
                       help="print pyftpdlib version and exit")
-    parser.add_option('-V', '--verbose', action='store_true',
-                      help="activate a more verbose logging")
 
     options, args = parser.parse_args()
     if options.version:
         sys.exit("pyftpdlib %s" % __ver__)
-    if options.verbose:
+    if options.debug:
         config_logging(level=logging.DEBUG)
 
     passive_ports = None
@@ -93,6 +94,7 @@ def main():
         ftpd.serve_forever()
     finally:
         ftpd.close_all()
+
 
 if __name__ == '__main__':
     main()

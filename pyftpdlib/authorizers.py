@@ -1,4 +1,4 @@
-# Copyright (C) 2007-2016 Giampaolo Rodola' <g.rodola@gmail.com>.
+# Copyright (C) 2007 Giampaolo Rodola' <g.rodola@gmail.com>.
 # Use of this source code is governed by MIT license that can be
 # found in the LICENSE file.
 
@@ -226,7 +226,10 @@ class DummyAuthorizer(object):
 
     def get_msg_quit(self, username):
         """Return the user's quitting message."""
-        return self.user_table[username]['msg_quit']
+        try:
+            return self.user_table[username]['msg_quit']
+        except KeyError:
+            return "Goodbye."
 
     def _check_permissions(self, username, perm):
         warned = 0

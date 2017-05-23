@@ -1,4 +1,4 @@
-# Copyright (C) 2007-2016 Giampaolo Rodola' <g.rodola@gmail.com>.
+# Copyright (C) 2007 Giampaolo Rodola' <g.rodola@gmail.com>.
 # Use of this source code is governed by MIT license that can be
 # found in the LICENSE file.
 
@@ -19,6 +19,16 @@ try:
     import grp
 except ImportError:
     pwd = grp = None
+
+try:
+    from OpenSSL import SSL  # requires "pip install pyopenssl"
+except ImportError:
+    SSL = None
+
+try:
+    from collections import OrderedDict  # python >= 2.7
+except ImportError:
+    OrderedDict = dict
 
 from . import __ver__
 from ._compat import b
@@ -61,8 +71,8 @@ def _import_sendfile():
             except ImportError:
                 pass
 
-sendfile = _import_sendfile()
 
+sendfile = _import_sendfile()
 
 proto_cmds = {
     'ABOR': dict(
@@ -222,6 +232,10 @@ def _strerror(err):
         return str(err)
 
 
+def _is_ssl_sock(sock):
+    return SSL is not None and isinstance(sock, SSL.Connection)
+
+
 def _support_hybrid_ipv6():
     """Return True if it is possible to use hybrid IPv6/IPv4 sockets
     on this platform.
@@ -235,6 +249,7 @@ def _support_hybrid_ipv6():
             return not sock.getsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY)
     except (socket.error, AttributeError):
         return False
+
 
 SUPPORTS_HYBRID_IPV6 = _support_hybrid_ipv6()
 
@@ -596,37 +611,21 @@ class DTPHandler(AsyncChat):
                                                  _errback=self.handle_error)
 
     def __repr__(self):
-        try:
-            addr = "%s:%s" % self.socket.getpeername()[:2]
-        except socket.error:
-            addr = None
-        status = [self.__class__.__module__ + "." + self.__class__.__name__]
-        status.append("(addr=%s, user=%r, receive=%r, file=%r)"
-                      % (addr, self.cmd_channel.username or '',
-                         self.receive, getattr(self.file_obj, 'name', '')))
-        return '<%s>' % (' '.join(status))
+        return '<%s(%s)>' % (self.__class__.__name__,
+                             self.cmd_channel.get_repr_info(as_str=True))
 
     __str__ = __repr__
 
-    def _use_sendfile(self, producer):
+    def use_sendfile(self):
         if not self.cmd_channel.use_sendfile:
-            debug("starting transfer not using sendfile(2) as per server "
-                  "config", self)
+            # as per server config
             return False
-        if not isinstance(producer, FileProducer):
-            debug("starting transfer not using sendfile(2) (directory "
-                  "listing)", self)
+        if self.file_obj is None or not hasattr(self.file_obj, "fileno"):
+            # direcotry listing or unusual file obj
             return False
-        else:
-            if not hasattr(self.file_obj, "fileno"):
-                debug("starting transfer not using sendfile(2) %r has no "
-                      "fileno() method" % self.file_obj, self)
-                return False
-        if not producer.type == 'i':
-            debug("starting transfer not using sendfile(2) (text file "
-                  "transfer)", self)
+        if self.cmd_channel._current_type != 'i':
+            # text file transfer (need to transform file content on the fly)
             return False
-        debug("starting transfer using sendfile()", self)
         return True
 
     def push(self, data):
@@ -639,7 +638,7 @@ class DTPHandler(AsyncChat):
         self._initialized = True
         self.modify_ioloop_events(self.ioloop.WRITE)
         self._wanted_io_events = self.ioloop.WRITE
-        if self._use_sendfile(producer):
+        if self.use_sendfile():
             self._offset = producer.file.tell()
             self._filefd = self.file_obj.fileno()
             try:
@@ -748,7 +747,7 @@ class DTPHandler(AsyncChat):
         (when the producer is consumed, close() was called instead of
         handle_close()).
         """
-        while 1:
+        while True:
             if len(self.producer_fifo):
                 p = self.producer_fifo.first()
                 # a 'None' in the producer fifo is a sentinel,
@@ -873,11 +872,14 @@ class DTPHandler(AsyncChat):
         if not self._closed:
             # RFC-959 says we must close the connection before replying
             AsyncChat.close(self)
+
+            # Close file object before responding successfully to client
+            if self.file_obj is not None and not self.file_obj.closed:
+                self.file_obj.close()
+                
             if self._resp:
                 self.cmd_channel.respond(self._resp[0], logfun=self._resp[1])
 
-            if self.file_obj is not None and not self.file_obj.closed:
-                self.file_obj.close()
             if self._idler is not None and not self._idler.cancelled:
                 self._idler.cancel()
             if self.file_obj is not None:
@@ -952,7 +954,10 @@ class ThrottledDTPHandler(_AsyncChatNewStyle, DTPHandler):
         self.ac_in_buffer_size = int(self.ac_in_buffer_size)
         self.ac_out_buffer_size = int(self.ac_out_buffer_size)
 
-    def _use_sendfile(self, producer):
+    def __repr__(self):
+        return DTPHandler.__repr__(self)
+
+    def use_sendfile(self):
         return False
 
     def recv(self, buffer_size):
@@ -1265,7 +1270,7 @@ class FTPHandler(AsyncChat):
         if self.tcp_no_delay:
             try:
                 self.socket.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
-            except socket.error:
+            except socket.error as err:
                 debug(
                     "call: FTPHandler.__init__, err on TCP_NODELAY %r" % err,
                     self)
@@ -1279,11 +1284,34 @@ class FTPHandler(AsyncChat):
             self._idler = self.ioloop.call_later(
                 self.timeout, self.handle_timeout, _errback=self.handle_error)
 
+    def get_repr_info(self, as_str=False, extra_info={}):
+        info = OrderedDict()
+        info['id'] = id(self)
+        info['addr'] = "%s:%s" % (self.remote_ip, self.remote_port)
+        if _is_ssl_sock(self.socket):
+            info['ssl'] = True
+        if self.username:
+            info['user'] = self.username
+        # If threads are involved sometimes "self" may be None (?!?).
+        dc = getattr(self, 'data_channel', None)
+        if dc is not None:
+            if _is_ssl_sock(dc.socket):
+                info['ssl-data'] = True
+            if dc.file_obj:
+                if self.data_channel.receive:
+                    info['sending-file'] = dc.file_obj
+                    if dc.use_sendfile():
+                        info['use-sendfile(2)'] = True
+                else:
+                    info['receiving-file'] = dc.file_obj
+                info['bytes-trans'] = dc.get_transmitted_bytes()
+        info.update(extra_info)
+        if as_str:
+            return ', '.join(['%s=%r' % (k, v) for (k, v) in info.items()])
+        return info
+
     def __repr__(self):
-        status = [self.__class__.__module__ + "." + self.__class__.__name__]
-        status.append("(addr=%s:%s, user=%r)" % (self.remote_ip,
-                      self.remote_port, self.username or ''))
-        return '<%s>' % (' '.join(status))
+        return '<%s(%s)>' % (self.__class__.__name__, self.get_repr_info(True))
 
     __str__ = __repr__
 
@@ -2079,7 +2107,25 @@ class FTPHandler(AsyncChat):
         # - Some older FTP clients erroneously issue /bin/ls-like LIST
         #   formats in which case we fall back on cwd as default.
         try:
-            iterator = self.run_as_current_user(self.fs.get_list_dir, path)
+            isdir = self.fs.isdir(path)
+            if isdir:
+                listing = self.run_as_current_user(self.fs.listdir, path)
+                if isinstance(listing, list):
+                    try:
+                        # RFC 959 recommends the listing to be sorted.
+                        listing.sort()
+                    except UnicodeDecodeError:
+                        # (Python 2 only) might happen on filesystem not
+                        # supporting UTF8 meaning os.listdir() returned a list
+                        # of mixed bytes and unicode strings:
+                        # http://goo.gl/6DLHD
+                        # http://bugs.python.org/issue683592
+                        pass
+                iterator = self.fs.format_list(path, listing)
+            else:
+                basedir, filename = os.path.split(path)
+                self.fs.lstat(path)  # raise exc in case of problems
+                iterator = self.fs.format_list(basedir, [filename])
         except (OSError, FilesystemError) as err:
             why = _strerror(err)
             self.respond('550 %s.' % why)
@@ -2095,7 +2141,7 @@ class FTPHandler(AsyncChat):
         """
         try:
             if self.fs.isdir(path):
-                listing = self.run_as_current_user(self.fs.listdir, path)
+                listing = list(self.run_as_current_user(self.fs.listdir, path))
             else:
                 # if path is a file we just list its name
                 self.fs.lstat(path)  # raise exc in case of problems
@@ -2788,7 +2834,25 @@ class FTPHandler(AsyncChat):
         else:
             line = self.fs.fs2ftp(path)
             try:
-                iterator = self.run_as_current_user(self.fs.get_list_dir, path)
+                isdir = self.fs.isdir(path)
+                if isdir:
+                    listing = self.run_as_current_user(self.fs.listdir, path)
+                    if isinstance(listing, list):
+                        try:
+                            # RFC 959 recommends the listing to be sorted.
+                            listing.sort()
+                        except UnicodeDecodeError:
+                            # (Python 2 only) might happen on filesystem not
+                            # supporting UTF8 meaning os.listdir() returned a
+                            # list of mixed bytes and unicode strings:
+                            # http://goo.gl/6DLHD
+                            # http://bugs.python.org/issue683592
+                            pass
+                    iterator = self.fs.format_list(path, listing)
+                else:
+                    basedir, filename = os.path.split(path)
+                    self.fs.lstat(path)  # raise exc in case of problems
+                    iterator = self.fs.format_list(basedir, [filename])
             except (OSError, FilesystemError) as err:
                 why = _strerror(err)
                 self.respond('550 %s.' % why)
@@ -2802,7 +2866,7 @@ class FTPHandler(AsyncChat):
         """List all new features supported as defined in RFC-2398."""
         features = set(['UTF8', 'TVFS'])
         features.update([feat for feat in ('EPRT', 'EPSV', 'MDTM', 'SIZE')
-                        if feat in self.proto_cmds])
+                         if feat in self.proto_cmds])
         features.update(self._extra_feats)
         if 'MLST' in self.proto_cmds or 'MLSD' in self.proto_cmds:
             facts = ''
@@ -2872,9 +2936,8 @@ class FTPHandler(AsyncChat):
             # provide a compact list of recognized commands
             def formatted_help():
                 cmds = []
-                keys = [x for x in self.proto_cmds.keys()
-                        if not x.startswith('SITE ')]
-                keys.sort()
+                keys = sorted([x for x in self.proto_cmds.keys()
+                               if not x.startswith('SITE ')])
                 while keys:
                     elems = tuple((keys[0:8]))
                     cmds.append(' %-6s' * len(elems) % elems + '\r\n')
@@ -2962,24 +3025,9 @@ class FTPHandler(AsyncChat):
 # ===================================================================
 # --- FTP over SSL
 # ===================================================================
-# requires PyOpenSSL - http://pypi.python.org/pypi/pyOpenSSL
-try:
-    from OpenSSL import SSL
-except ImportError:
-    pass
-else:
-    _ssl_proto_cmds = proto_cmds.copy()
-    _ssl_proto_cmds.update({
-        'AUTH': dict(
-            perm=None, auth=False, arg=True,
-            help='Syntax: AUTH <SP> TLS|SSL (set up secure control channel).'),
-        'PBSZ': dict(
-            perm=None, auth=False, arg=True,
-            help='Syntax: PBSZ <SP> 0 (negotiate TLS buffer).'),
-        'PROT': dict(
-            perm=None, auth=False, arg=True,
-            help='Syntax: PROT <SP> [C|P] (set up un/secure data channel).'),
-    })
+
+
+if SSL is not None:
 
     class SSLConnection(_AsyncChatNewStyle):
         """An AsyncChat subclass supporting TLS/SSL."""
@@ -3060,10 +3108,11 @@ else:
                 self.socket.do_handshake()
             except SSL.WantReadError:
                 self._ssl_want_read = True
-                debug("call: _do_ssl_handshake, err: want-read", inst=self)
+                debug("call: _do_ssl_handshake, err: ssl-want-read", inst=self)
             except SSL.WantWriteError:
                 self._ssl_want_write = True
-                debug("call: _do_ssl_handshake, err: want-write", inst=self)
+                debug("call: _do_ssl_handshake, err: ssl-want-write",
+                      inst=self)
             except SSL.SysCallError as err:
                 debug("call: _do_ssl_handshake, err: %r" % err, inst=self)
                 retval, desc = err.args
@@ -3136,11 +3185,11 @@ else:
             try:
                 return super(SSLConnection, self).send(data)
             except SSL.WantReadError:
-                debug("call: send(), err: want-read", inst=self)
+                debug("call: send(), err: ssl-want-read", inst=self)
                 self._ssl_want_read = True
                 return 0
             except SSL.WantWriteError:
-                debug("call: send(), err: want-write", inst=self)
+                debug("call: send(), err: ssl-want-write", inst=self)
                 self._ssl_want_write = True
                 return 0
             except SSL.ZeroReturnError as err:
@@ -3164,11 +3213,11 @@ else:
             try:
                 return super(SSLConnection, self).recv(buffer_size)
             except SSL.WantReadError:
-                debug("call: recv(), err: want-read", inst=self)
+                debug("call: recv(), err: ssl-want-read", inst=self)
                 self._ssl_want_read = True
                 raise RetryError
             except SSL.WantWriteError:
-                debug("call: recv(), err: want-write", inst=self)
+                debug("call: recv(), err: ssl-want-write", inst=self)
                 self._ssl_want_write = True
                 raise RetryError
             except SSL.ZeroReturnError as err:
@@ -3234,10 +3283,10 @@ else:
                     self.socket.set_shutdown(SSL.SENT_SHUTDOWN)
             except SSL.WantReadError:
                 self._ssl_want_read = True
-                debug("call: _do_ssl_shutdown, err: want-read", inst=self)
+                debug("call: _do_ssl_shutdown, err: ssl-want-read", inst=self)
             except SSL.WantWriteError:
                 self._ssl_want_write = True
-                debug("call: _do_ssl_shutdown, err: want-write", inst=self)
+                debug("call: _do_ssl_shutdown, err: ssl-want-write", inst=self)
             except SSL.ZeroReturnError as err:
                 debug(
                     "call: _do_ssl_shutdown() -> shutdown(), err: zero-return",
@@ -3298,14 +3347,14 @@ else:
             if self.cmd_channel._prot:
                 self.secure_connection(self.cmd_channel.ssl_context)
 
-        def _use_sendfile(self, producer):
+        def __repr__(self):
+            return DTPHandler.__repr__(self)
+
+        def use_sendfile(self):
             if isinstance(self.socket, SSL.Connection):
-                debug(
-                    "starting transfer not using sendfile(2) (SSL connection)",
-                    self)
                 return False
             else:
-                return super(TLS_DTPHandler, self)._use_sendfile(producer)
+                return super(TLS_DTPHandler, self).use_sendfile()
 
         def handle_failed_ssl_handshake(self):
             # TLS/SSL handshake failure, probably client's fault which
@@ -3345,19 +3394,20 @@ else:
             can be omitted if certfile already contains the private
             key (defaults: None).
 
-         - (int) protocol:
-            specifies which version of the SSL protocol to use when
-            establishing SSL/TLS sessions; clients can then only
-            connect using the configured protocol (defaults to SSLv23,
-            allowing SSLv3 and TLSv1 protocols).
+         - (int) ssl_protocol:
+            the desired SSL protocol version to use. This defaults to
+            PROTOCOL_SSLv23 which will negotiate the highest protocol
+            that both the server and your installation of OpenSSL
+            support.
 
-            Possible values:
-            * SSL.SSLv2_METHOD - allow only SSLv2
-            * SSL.SSLv3_METHOD - allow only SSLv3
-            * SSL.SSLv23_METHOD - allow both SSLv3 and TLSv1
-            * SSL.TLSv1_METHOD - allow only TLSv1
+         - (int) ssl_options:
+            specific OpenSSL options. These default to:
+            SSL.OP_NO_SSLv2 | SSL.OP_NO_SSLv3| SSL.OP_NO_COMPRESSION
+            which are all considered insecure features.
+            Can be set to None in order to improve compatibilty with
+            older (insecure) FTP clients.
 
-          - (instance) context:
+          - (instance) ssl_context:
             a SSL Context object previously configured; if specified
             all other parameters will be ignored.
             (default None).
@@ -3369,11 +3419,31 @@ else:
         certfile = None
         keyfile = None
         ssl_protocol = SSL.SSLv23_METHOD
+        # - SSLv2 is easily broken and is considered harmful and dangerous
+        # - SSLv3 has several problems and is now dangerous
+        # - Disable compression to prevent CRIME attacks for OpenSSL 1.0+
+        #   (see https://github.com/shazow/urllib3/pull/309)
+        ssl_options = SSL.OP_NO_SSLv2 | SSL.OP_NO_SSLv3
+        if hasattr(SSL, "OP_NO_COMPRESSION"):
+            ssl_options |= SSL.OP_NO_COMPRESSION
         ssl_context = None
 
         # overridden attributes
-        proto_cmds = _ssl_proto_cmds
         dtp_handler = TLS_DTPHandler
+        proto_cmds = FTPHandler.proto_cmds.copy()
+        proto_cmds.update({
+            'AUTH': dict(
+                perm=None, auth=False, arg=True,
+                help='Syntax: AUTH <SP> TLS|SSL (set up secure control '
+                     'channel).'),
+            'PBSZ': dict(
+                perm=None, auth=False, arg=True,
+                help='Syntax: PBSZ <SP> 0 (negotiate TLS buffer).'),
+            'PROT': dict(
+                perm=None, auth=False, arg=True,
+                help='Syntax: PROT <SP> [C|P] (set up un/secure data '
+                     'channel).'),
+        })
 
         def __init__(self, conn, server, ioloop=None):
             super(TLS_FTPHandler, self).__init__(conn, server, ioloop)
@@ -3383,6 +3453,9 @@ else:
             self._pbsz = False
             self._prot = False
             self.ssl_context = self.get_ssl_context()
+
+        def __repr__(self):
+            return FTPHandler.__repr__(self)
 
         @classmethod
         def get_ssl_context(cls):
@@ -3398,6 +3471,8 @@ else:
                 if not cls.keyfile:
                     cls.keyfile = cls.certfile
                 cls.ssl_context.use_privatekey_file(cls.keyfile)
+                if cls.ssl_options:
+                    cls.ssl_context.set_options(cls.ssl_options)
             return cls.ssl_context
 
         # --- overridden methods

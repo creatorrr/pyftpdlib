@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright (C) 2007-2016 Giampaolo Rodola' <g.rodola@gmail.com>.
+# Copyright (C) 2007 Giampaolo Rodola' <g.rodola@gmail.com>.
 # Use of this source code is governed by MIT license that can be
 # found in the LICENSE file.
 
@@ -24,6 +24,7 @@ def main():
     handler.abstracted_fs = UnixFilesystem
     server = FTPServer(('', 21), handler)
     server.serve_forever()
+
 
 if __name__ == "__main__":
     main()

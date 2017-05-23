@@ -1,5 +1,39 @@
 Bug tracker at https://github.com/giampaolo/pyftpdlib/issues
 
+Version: 1.5.3 - XXXX-XX-XX
+===========================
+
+**Bug fixes**
+
+- #414: Respond successfully to STOR only after closing file handle.
+
+Version: 1.5.2 - 2017-04-06
+===========================
+
+**Enhancements**
+
+- #378: SSL security was improved by disabling SSLv2, SSLv3 and SSL_COMPRESSION
+  features. New TLS_FTPHandler's ssl_options class attribute was added.
+- #380: AbstractedFS.listdir() can now return also a generator (not only a
+  list).
+
+**Bug fixes**
+
+- #367: ThreadedFTPServer no longer hangs if close_all() is called.
+- #394: ETIMEDOUT is not treated as an alias for "connection lost".
+- #400: QUIT can raise KeyError in case the user hasn't logged in yet and sends
+  QUIT command.
+
+
+Version: 1.5.1 - 2016-05-02
+===========================
+
+**Bug fixes**
+
+- #381: an extraneous file was accidentally added to the tarball, causing
+  issues with Python 3.
+
+
 Version: 1.5.0 - 2015-12-13
 ===========================
 

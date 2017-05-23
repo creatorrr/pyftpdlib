@@ -10,7 +10,13 @@ if [[ "$(uname -s)" == 'Darwin' ]]; then
     pyenv activate pyftpdlib
 fi
 
-pip install flake8 pyopenssl mock
 python setup.py install
 python pyftpdlib/test/runner.py
-flake8
+
+# run linter only on Linux and on latest python versions
+if [ "$PYVER" == "2.7" ] || [ "$PYVER" == "3.6" ]; then
+    if [[ "$(uname -s)" != 'Darwin' ]]; then
+        rm -rf build
+        python -m flake8
+    fi
+fi

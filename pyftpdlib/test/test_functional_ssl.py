@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright (C) 2007-2016 Giampaolo Rodola' <g.rodola@gmail.com>.
+# Copyright (C) 2007 Giampaolo Rodola' <g.rodola@gmail.com>.
 # Use of this source code is governed by MIT license that can be
 # found in the LICENSE file.
 
@@ -9,16 +9,16 @@ import ftplib
 import os
 import socket
 import sys
-try:
-    import ssl
-except ImportError:
-    ssl = None
+import ssl
 
-from pyftpdlib import handlers
+import OpenSSL  # requires "pip install pyopenssl"
+
+from pyftpdlib.handlers import TLS_FTPHandler
 from pyftpdlib.test import configure_logging
-from pyftpdlib.test import FTPd
+from pyftpdlib.test import OSX
 from pyftpdlib.test import PASSWD
 from pyftpdlib.test import remove_test_files
+from pyftpdlib.test import ThreadedTestFTPd
 from pyftpdlib.test import TIMEOUT
 from pyftpdlib.test import TRAVIS
 from pyftpdlib.test import unittest
@@ -41,20 +41,16 @@ from pyftpdlib.test.test_functional import TestSendfile
 from pyftpdlib.test.test_functional import TestTimeouts
 
 
-FTPS_SUPPORT = (hasattr(ftplib, 'FTP_TLS') and
-                hasattr(handlers, 'TLS_FTPHandler'))
+FTPS_SUPPORT = hasattr(ftplib, 'FTP_TLS')
 if sys.version_info < (2, 7):
     FTPS_UNSUPPORT_REASON = "requires python 2.7+"
-elif ssl is None:
-    FTPS_UNSUPPORT_REASON = "requires ssl module"
-elif not hasattr(handlers, 'TLS_FTPHandler'):
-    FTPS_UNSUPPORT_REASON = "requires PyOpenSSL module"
 else:
     FTPS_UNSUPPORT_REASON = "FTPS test skipped"
 
 CERTFILE = os.path.abspath(os.path.join(os.path.dirname(__file__),
                                         'keycert.pem'))
 
+del OpenSSL
 
 # =====================================================================
 # --- FTPS mixin tests
@@ -77,9 +73,9 @@ if FTPS_SUPPORT:
             ftplib.FTP_TLS.login(self, *args, **kwargs)
             self.prot_p()
 
-    class FTPSServer(FTPd):
+    class FTPSServer(ThreadedTestFTPd):
         """A threaded FTPS server used for functional testing."""
-        handler = handlers.TLS_FTPHandler
+        handler = TLS_FTPHandler
         handler.certfile = CERTFILE
 
     class TLSTestMixin:
@@ -225,9 +221,10 @@ class TestFTPS(unittest.TestCase):
 
     def tearDown(self):
         self.client.ssl_version = ssl.PROTOCOL_SSLv23
-        self.server.handler.ssl_version = ssl.PROTOCOL_SSLv23
-        self.server.handler.tls_control_required = False
-        self.server.handler.tls_data_required = False
+        with self.server.lock:
+            self.server.handler.ssl_version = ssl.PROTOCOL_SSLv23
+            self.server.handler.tls_control_required = False
+            self.server.handler.tls_data_required = False
         self.client.close()
         self.server.stop()
 
@@ -278,7 +275,7 @@ class TestFTPS(unittest.TestCase):
         self.client.prot_p()
         sock = self.client.transfercmd('list')
         with contextlib.closing(sock):
-            while 1:
+            while True:
                 if not sock.recv(1024):
                     self.client.voidresp()
                     break
@@ -287,7 +284,7 @@ class TestFTPS(unittest.TestCase):
             self.client.prot_c()
         sock = self.client.transfercmd('list')
         with contextlib.closing(sock):
-            while 1:
+            while True:
                 if not sock.recv(1024):
                     self.client.voidresp()
                     break
@@ -317,7 +314,8 @@ class TestFTPS(unittest.TestCase):
             self.assertEqual(chunk, b"")
 
     def test_tls_control_required(self):
-        self.server.handler.tls_control_required = True
+        with self.server.lock:
+            self.server.handler.tls_control_required = True
         msg = "550 SSL/TLS required on the control channel."
         self.assertRaisesWithMsg(ftplib.error_perm, msg,
                                  self.client.sendcmd, "user " + USER)
@@ -326,7 +324,8 @@ class TestFTPS(unittest.TestCase):
         self.client.login(secure=True)
 
     def test_tls_data_required(self):
-        self.server.handler.tls_data_required = True
+        with self.server.lock:
+            self.server.handler.tls_data_required = True
         self.client.login(secure=True)
         msg = "550 SSL/TLS required on the data channel."
         self.assertRaisesWithMsg(ftplib.error_perm, msg,
@@ -335,7 +334,8 @@ class TestFTPS(unittest.TestCase):
         self.client.retrlines('list', lambda x: x)
 
     def try_protocol_combo(self, server_protocol, client_protocol):
-        self.server.handler.ssl_version = server_protocol
+        with self.server.lock:
+            self.server.handler.ssl_version = server_protocol
         self.client.ssl_version = client_protocol
         self.client.close()
         self.client.connect(self.server.host, self.server.port)
@@ -346,25 +346,65 @@ class TestFTPS(unittest.TestCase):
         else:
             self.client.quit()
 
-    def test_ssl_version(self):
-        protos = [ssl.PROTOCOL_SSLv3, ssl.PROTOCOL_SSLv23, ssl.PROTOCOL_TLSv1]
-        if hasattr(ssl, "PROTOCOL_SSLv2"):
-            protos.append(ssl.PROTOCOL_SSLv2)
-            for proto in protos:
-                self.try_protocol_combo(ssl.PROTOCOL_SSLv2, proto)
-        for proto in protos:
-            self.try_protocol_combo(ssl.PROTOCOL_SSLv3, proto)
-        for proto in protos:
-            self.try_protocol_combo(ssl.PROTOCOL_SSLv23, proto)
-        for proto in protos:
-            self.try_protocol_combo(ssl.PROTOCOL_TLSv1, proto)
+    # def test_ssl_version(self):
+    #     protos = [ssl.PROTOCOL_SSLv3, ssl.PROTOCOL_SSLv23,
+    #               ssl.PROTOCOL_TLSv1]
+    #     if hasattr(ssl, "PROTOCOL_SSLv2"):
+    #         protos.append(ssl.PROTOCOL_SSLv2)
+    #         for proto in protos:
+    #             self.try_protocol_combo(ssl.PROTOCOL_SSLv2, proto)
+    #     for proto in protos:
+    #         self.try_protocol_combo(ssl.PROTOCOL_SSLv3, proto)
+    #     for proto in protos:
+    #         self.try_protocol_combo(ssl.PROTOCOL_SSLv23, proto)
+    #     for proto in protos:
+    #         self.try_protocol_combo(ssl.PROTOCOL_TLSv1, proto)
+
+    # On OSX TLS_FTPHandler.get_ssl_context()._context does not exist.
+    @unittest.skipIf(OSX, "can't get options on OSX")
+    def test_ssl_options(self):
+        from OpenSSL import SSL
+        from OpenSSL._util import lib
+        from pyftpdlib.handlers import TLS_FTPHandler
+        try:
+            TLS_FTPHandler.ssl_context = None
+            ctx = TLS_FTPHandler.get_ssl_context()
+            # Verify default opts.
+            with contextlib.closing(socket.socket()) as s:
+                s = SSL.Connection(ctx, s)
+                opts = lib.SSL_CTX_get_options(ctx._context)
+                self.assertTrue(opts & SSL.OP_NO_SSLv2)
+                self.assertTrue(opts & SSL.OP_NO_SSLv3)
+                self.assertTrue(opts & SSL.OP_NO_COMPRESSION)
+                TLS_FTPHandler.ssl_context = None  # reset
+            # Make sure that if ssl_options is None no options are set
+            # (except OP_NO_SSLv2 whch is enabled by default unless
+            # ssl_proto is set to SSL.SSLv23_METHOD).
+            TLS_FTPHandler.ssl_context = None
+            TLS_FTPHandler.ssl_options = None
+            ctx = TLS_FTPHandler.get_ssl_context()
+            with contextlib.closing(socket.socket()) as s:
+                s = SSL.Connection(ctx, s)
+                opts = lib.SSL_CTX_get_options(ctx._context)
+                self.assertTrue(opts & SSL.OP_NO_SSLv2)
+                # self.assertFalse(opts & SSL.OP_NO_SSLv3)
+                self.assertFalse(opts & SSL.OP_NO_COMPRESSION)
+        finally:
+            TLS_FTPHandler.ssl_context = None
 
     if hasattr(ssl, "PROTOCOL_SSLv2"):
         def test_sslv2(self):
             self.client.ssl_version = ssl.PROTOCOL_SSLv2
             self.client.close()
-            self.client.connect(self.server.host, self.server.port)
-            self.assertRaises(socket.error, self.client.login)
+            if not OSX:
+                with self.server.lock:
+                    self.client.connect(self.server.host, self.server.port)
+                self.assertRaises(socket.error, self.client.login)
+            else:
+                with self.server.lock:
+                    with self.assertRaises(socket.error):
+                        self.client.connect(self.server.host, self.server.port,
+                                            timeout=0.1)
             self.client.ssl_version = ssl.PROTOCOL_SSLv2
 
 
